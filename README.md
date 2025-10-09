@@ -1,0 +1,1 @@
+Reikia įsirašyti https://pypi.org/project/pygame-ce/

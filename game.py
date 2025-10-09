@@ -1,14 +1,21 @@
 import pygame
 import os
+import random
 
 pygame.init()
 
 # --- Window setup ---
 WIDTH, HEIGHT = 1920, 1080  # Use a more common window size for testing
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Katinukas by the Lake")
+pygame.display.set_caption("Katinuko žvejyba")
 
 clock = pygame.time.Clock()
+
+# --- Font setup ---
+pygame.font.init()
+title_font = pygame.font.SysFont('Arial', 72, bold=True)
+title_surface = title_font.render("Katinuko žvejyba", True, (255, 255, 255))
+title_rect = title_surface.get_rect(center=(WIDTH // 2, 60))
 
 # --- Load assets ---
 background = pygame.image.load("images/ezeras.png").convert()
@@ -50,8 +57,8 @@ RIGHT_MARGIN = WIDTH - WIDTH // 3 - FRAME_WIDTH * SCALE
 # --- Varna animals setup ---
 VARNA_FRAME_WIDTH = 64
 VARNA_FRAME_HEIGHT = 64
-VARNA_NUM_FRAMES = 5  # Your sheet has 5 frames
-VARNA_SCALE = 2  # You can adjust scale if you want
+VARNA_NUM_FRAMES = 5
+VARNA_SCALE = 2
 
 varna_sheet = pygame.image.load("images/varna_Sheet.png").convert_alpha()
 varna_frames = []
@@ -60,13 +67,15 @@ for i in range(VARNA_NUM_FRAMES):
     frame = pygame.transform.scale(frame, (VARNA_FRAME_WIDTH * VARNA_SCALE, VARNA_FRAME_HEIGHT * VARNA_SCALE))
     varna_frames.append(frame)
 
-# Positions for varna animals (higher in the sky)
-varna_positions = [
-    (300, 100),
-    (700, 150),
-    (1100, 80),
-    (1600, 120)
-]
+# Create moving varna animals
+varna_animals = []
+for pos in [(300, 100), (700, 150), (1100, 80), (1600, 120)]:
+    varna_animals.append({
+        "x": pos[0],
+        "y": pos[1],
+        "dx": random.choice([-1, 1]) * random.uniform(0.5, 1.5),
+        "dy": random.choice([-1, 1]) * random.uniform(0.2, 0.7)
+    })
 
 varna_anim_frame = 0
 
@@ -124,6 +133,16 @@ while running:
     else:
         scroll_x = 0
 
+    # --- Move varna animals randomly ---
+    for animal in varna_animals:
+        animal["x"] += animal["dx"]
+        animal["y"] += animal["dy"]
+        # Bounce off screen edges (sky area: y < 300)
+        if animal["x"] < 0 or animal["x"] > WIDTH - VARNA_FRAME_WIDTH * VARNA_SCALE:
+            animal["dx"] *= -1
+        if animal["y"] < 0 or animal["y"] > 300:
+            animal["dy"] *= -1
+
     # --- Animation ---
     if moving:
         current_frame = (current_frame + 0.2) % NUM_FRAMES
@@ -144,10 +163,13 @@ while running:
     screen.fill((0, 0, 0))
     screen.blit(background, (0, 0))  # Always fills window
 
+    # Draw game title
+    screen.blit(title_surface, title_rect)
+
     # Draw varna animals
-    for pos in varna_positions:
+    for animal in varna_animals:
         varna_frame = varna_frames[int(varna_anim_frame)]
-        screen.blit(varna_frame, pos)
+        screen.blit(varna_frame, (int(animal["x"]), int(animal["y"])))
 
     # Draw zuvys animals
     for pos in zuvys_positions:
