@@ -490,6 +490,35 @@ try:
 except Exception:
     pass
 
+# --- Bubbles (burbulai) sprite sheet: 80x8, 10 frames horizontally (each 8x8) ---
+BUBBLE_SCALE = 3
+burbulai_frames = []
+try:
+    burb_sheet = pygame.image.load(os.path.join(IMAGES_DIR, "burbulai.png")).convert_alpha()
+    frame_w, frame_h, frames_count = 8, 8, 10
+    for i in range(frames_count):
+        sub = burb_sheet.subsurface((i * frame_w, 0, frame_w, frame_h)).copy()
+        sub = pygame.transform.scale(sub, (frame_w * BUBBLE_SCALE, frame_h * BUBBLE_SCALE))
+        burbulai_frames.append(sub)
+except Exception:
+    # fallback single frame
+    ph = pygame.Surface((8 * BUBBLE_SCALE, 8 * BUBBLE_SCALE), pygame.SRCALPHA)
+    pygame.draw.circle(ph, (180, 220, 255), (4 * BUBBLE_SCALE, 4 * BUBBLE_SCALE), 4 * BUBBLE_SCALE, 2)
+    burbulai_frames = [ph]
+
+# bubbles state
+bubbles = []  # each: {"x","y","vx","vy","born_ms","frame_idx","frame_tick","rect"}
+BUBBLE_SPEED = 6.0
+BUBBLE_LIFETIME_MS = 1500
+BUBBLE_COOLDOWN_MS = 120
+last_bubble_ms = 0
+
+# underwater facing
+uw_facing_left = False
+
+# shark slow effect
+SHARK_SLOW_MS = 2000
+
 # --- Main game loop ---
 while running:
    # capture events once; record E presses into a flag
@@ -639,6 +668,31 @@ while running:
            uw_player_y = bottom_y
            uw_player_vy = 0.0
 
+       # update underwater facing based on last horizontal input
+       if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+           uw_facing_left = True
+       elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+           uw_facing_left = False
+
+       # spawn bubbles with F (cooldown)
+       now_ms = pygame.time.get_ticks()
+       if keys[pygame.K_f] and (now_ms - last_bubble_ms) >= BUBBLE_COOLDOWN_MS and burbulai_frames:
+           spawn_x = uw_player_x + (-player_w // 2 if uw_facing_left else player_w // 2)
+           spawn_y = uw_player_y + int(player_h * 0.4)
+           vx = -BUBBLE_SPEED if uw_facing_left else BUBBLE_SPEED
+           vy = -0.5  # slight rise
+           bw = burbulai_frames[0].get_width()
+           bh = burbulai_frames[0].get_height()
+           rect = pygame.Rect(int(spawn_x), int(spawn_y), bw, bh)
+           bubbles.append({
+               "x": float(spawn_x), "y": float(spawn_y),
+               "vx": vx, "vy": vy,
+               "born_ms": now_ms,
+               "frame_idx": 0, "frame_tick": 0,
+               "rect": rect
+           })
+           last_bubble_ms = now_ms
+
        # draw player centered on (uw_player_x, uw_player_y)
        screen.blit(blizge_img, (int(uw_player_x - player_w // 2), int(uw_player_y)))
 
@@ -688,7 +742,6 @@ while running:
                    except ValueError:
                        pass
                    disabled_spots.add(current_fishing_spot)
-
                # clear underwater state and return
                show_dugnas = False
                underwater_fish.clear()
@@ -697,32 +750,92 @@ while running:
                current_fishing_spot = None
                last_spawned_count = 0
 
+               # --- Update + draw bubbles (burbulai) ---
+               for b in bubbles[:]:
+                   # animate
+                   b["frame_tick"] += 1
+                   if b["frame_tick"] >= 4:
+                       b["frame_tick"] = 0
+                       b["frame_idx"] = (b["frame_idx"] + 1) % len(burbulai_frames)
+                   # move
+                   b["x"] += b["vx"]
+                   b["y"] += b["vy"]
+                   b["rect"].x = int(b["x"])
+                   b["rect"].y = int(b["y"])
+                   # lifetime
+                   if pygame.time.get_ticks() - b["born_ms"] >= BUBBLE_LIFETIME_MS:
+                       bubbles.remove(b)
+                       continue
+                   # collide with sharks -> apply slow and pop bubble
+                   for shark in underwater_sharks:
+                       if shark["rect"].colliderect(b["rect"]):
+                           shark["slow_until"] = pygame.time.get_ticks() + SHARK_SLOW_MS
+                           if b in bubbles:
+                               bubbles.remove(b)
+                           break
+                   # draw bubble
+                   img_b = burbulai_frames[b["frame_idx"]]
+                   screen.blit(img_b, (int(b["x"]), int(b["y"])))
+
+       # --- Update + draw bubbles (burbulai) ---
+       for b in bubbles[:]:
+           # animate
+           b["frame_tick"] += 1
+           if b["frame_tick"] >= 4:
+               b["frame_tick"] = 0
+               b["frame_idx"] = (b["frame_idx"] + 1) % len(burbulai_frames)
+           # move
+           b["x"] += b["vx"]
+           b["y"] += b["vy"]
+           b["rect"].x = int(b["x"])
+           b["rect"].y = int(b["y"])
+           # lifetime
+           if pygame.time.get_ticks() - b["born_ms"] >= BUBBLE_LIFETIME_MS:
+               bubbles.remove(b)
+               continue
+           # collide with sharks -> apply slow and pop bubble
+           for shark in underwater_sharks:
+               if shark["rect"].colliderect(b["rect"]):
+                   shark["slow_until"] = pygame.time.get_ticks() + SHARK_SLOW_MS
+                   if b in bubbles:
+                       bubbles.remove(b)
+                   break
+           # draw bubble
+           img_b = burbulai_frames[b["frame_idx"]]
+           screen.blit(img_b, (int(b["x"]), int(b["y"])))
+
        # --- Update + draw sharks (riklys) ---
        now_ms = pygame.time.get_ticks()
        for shark in underwater_sharks[:]:
+           slow_active = now_ms < shark.get("slow_until", 0)
+           speed_factor = 0.5 if slow_active else 1.0
+
            # distance to player (player world coords: uw_player_x, uw_player_y)
            dxp = (uw_player_x - shark["x"])
            dyp = (uw_player_y - shark["y"])
-           dist = (dxp*dxp + dyp*dyp) ** 0.5
+           dist = (dxp * dxp + dyp * dyp) ** 0.5
 
            # decide state
            if dist <= SHARK_ATTACK_RANGE:
                shark["state"] = "attack"
                # move toward player
                norm = dist if dist != 0 else 1
-               shark["dx"] = (dxp / norm) * SHARK_ATTACK_SPEED
-               # small vertical tracking
-               shark["y"] += (dyp / norm) * 0.6
+               shark["dx"] = (dxp / norm) * (SHARK_ATTACK_SPEED * speed_factor)
+               shark["y"] += (dyp / norm) * (0.6 * speed_factor)
            else:
                # patrol behaviour
                if shark["state"] != "patrol":
                    shark["state"] = "patrol"
-                   shark["dx"] = random.choice([-1, 1]) * SHARK_PATROL_SPEED
+                   shark["dx"] = random.choice([-1, 1]) * (SHARK_PATROL_SPEED * speed_factor)
                # random turn
                if random.random() < SHARK_PATROL_TURN_CHANCE:
-                   shark["dx"] *= -1
+                   shark["dx"] = -shark["dx"]
                # gentle vertical bobbing
                shark["y"] += math.sin(pygame.time.get_ticks() / 600.0 + shark["x"]) * 0.2
+
+           # ensure patrol speed magnitude reflects slow
+           if shark["state"] == "patrol":
+               shark["dx"] = math.copysign(SHARK_PATROL_SPEED * speed_factor, shark["dx"])
 
            # apply horizontal move & clamp to world
            shark["x"] += shark["dx"]
@@ -762,7 +875,6 @@ while running:
                if s_hit.colliderect(p_hit):
                    # apply damage and activate invulnerability
                    player_lives -= 1
-                   # play hurt sound if available
                    try:
                        if hurt_sound:
                            hurt_sound.play()
