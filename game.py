@@ -441,6 +441,9 @@ for i in range(1, 6):
         pygame.draw.rect(placeholder, (255, 0, 0), placeholder.get_rect(), 2)
         hp_images.append(placeholder)
 
+# add invulnerability timing so player can't be hit repeatedly in the same frame/short window
+INVULN_MS = 1500               # milliseconds of invulnerability after a hit
+player_invuln_until = 0
 
 # --- Main game loop ---
 while running:
@@ -668,8 +671,8 @@ while running:
            if shark["x"] < 10:
                shark["x"] = 10
                shark["dx"] *= -1
-           if 'WORLD_WIDTH' in globals() and shark["x"] > WORLD_WIDTH - shark["rect"].width - 10:
-               shark["x"] = WORLD_WIDTH - shark["rect"].width - 10
+           if shark["x"] > WIDTH - shark["rect"].width - 10:
+               shark["x"] = WIDTH - shark["rect"].width - 10
                shark["dx"] *= -1
 
            shark["rect"].x = int(shark["x"])
@@ -693,28 +696,30 @@ while running:
            # draw shark (world->screen)
            screen.blit(img, (int(shark["x"] - uw_scroll_x), int(shark["y"])))
 
-           # collision with player — use smaller hitboxes and NO invulnerability
-           p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width() // 2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
-           p_hit = p_rect.inflate(-int(p_rect.width * 0.4), -int(p_rect.height * 0.4))   # shrink player hitbox
-           s_hit = shark["rect"].inflate(-int(shark["rect"].width * 0.6), -int(shark["rect"].height * 0.6))  # shrink shark hitbox
-           if s_hit.colliderect(p_hit):
-               # immediate damage on collision (no invulnerability)
-               player_lives -= 1
-               # knockback: push player a bit horizontally
-               if shark["x"] < uw_player_x:
-                   uw_player_x += 40
-               else:
-                   uw_player_x -= 40
-               # if lives depleted, clear underwater and return to surface
-               if player_lives <= 0:
-                   show_dugnas = False
-                   underwater_fish.clear()
-                   underwater_sharks.clear()
-                   cast_hook_x = None
-                   cast_hook_y = None
-                   current_fishing_spot = None
-                   last_spawned_count = 0
-                   break
+           # collision with player — apply invulnerability window after a hit
+           if now_ms >= player_invuln_until:
+               p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width() // 2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
+               p_hit = p_rect.inflate(-int(p_rect.width * 0.4), -int(p_rect.height * 0.4))   # shrink player hitbox
+               s_hit = shark["rect"].inflate(-int(shark["rect"].width * 0.6), -int(shark["rect"].height * 0.6))  # shrink shark hitbox
+               if s_hit.colliderect(p_hit):
+                   # apply damage and activate invulnerability
+                   player_lives -= 1
+                   player_invuln_until = now_ms + INVULN_MS
+                   # knockback
+                   if shark["x"] < uw_player_x:
+                       uw_player_x += 40
+                   else:
+                       uw_player_x -= 40
+                   # if lives depleted, clear underwater and return to surface
+                   if player_lives <= 0:
+                       show_dugnas = False
+                       underwater_fish.clear()
+                       underwater_sharks.clear()
+                       cast_hook_x = None
+                       cast_hook_y = None
+                       current_fishing_spot = None
+                       last_spawned_count = 0
+                       break
 
        # draw player lives
        # draw player lives using hp images (1hp..5hp). index = player_lives - 1 (clamped)
