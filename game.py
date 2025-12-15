@@ -525,21 +525,27 @@ while running:
 
        # return to surface
        if keys[pygame.K_RETURN]:
-           # If all underwater fish were caught for this spot, disable that surface fishing spot
-           if not underwater_fish and current_fishing_spot is not None:
-               try:
-                   zuvys_positions.remove(current_fishing_spot)
-               except ValueError:
-                   pass
-               disabled_spots.add(current_fishing_spot)
+           if underwater_fish:
+               # feedback: cannot return while fish remain
+               warn = small.render("Negalite grįžti — sugaukite visas žuvis", True, (255, 80, 80))
+               warn_rect = warn.get_rect(center=(WIDTH // 2, HEIGHT - 80))
+               screen.blit(warn, warn_rect)
+           else:
+               # If all underwater fish were caught for this spot, disable that surface fishing spot
+               if current_fishing_spot is not None:
+                   try:
+                       zuvys_positions.remove(current_fishing_spot)
+                   except ValueError:
+                       pass
+                   disabled_spots.add(current_fishing_spot)
 
-           # clear underwater state and return
-           show_dugnas = False
-           underwater_fish.clear()
-           cast_hook_x = None
-           cast_hook_y = None
-           current_fishing_spot = None
-           last_spawned_count = 0
+               # clear underwater state and return
+               show_dugnas = False
+               underwater_fish.clear()
+               cast_hook_x = None
+               cast_hook_y = None
+               current_fishing_spot = None
+               last_spawned_count = 0
 
        pygame.display.flip()
        clock.tick(60)
