@@ -401,27 +401,45 @@ SHARK_PATROL_SPEED = 1.0
 SHARK_ATTACK_SPEED = 2.4
 SHARK_ATTACK_RANGE = 140     # start attack when player closer than this (pixels)
 SHARK_PATROL_TURN_CHANCE = 0.01
-# player lives & invulnerability
-player_lives = 3
-INVULN_MS = 1500
-player_invuln_until = 0
 
-
-# function to spawn sharks
 def spawn_sharks(n=2, x_min=200, x_max=None):
+    """Spawn n sharks in the given world x range."""
     if x_max is None:
         x_max = max(1000, WIDTH * 2)
-    for i in range(n):
-        x = random.randint(x_min, x_max)
-        y = random.randint(HEIGHT//2 + 10, HEIGHT - 120)
-        dx = random.choice([-1, 1]) * SHARK_PATROL_SPEED
-        w = riklys_a_frames[0].get_width()
-        h = riklys_a_frames[0].get_height()
-        rect = pygame.Rect(x, y, w, h)
+    for _ in range(n):
+        sx = random.randint(x_min, x_max)
+        sy = random.randint(HEIGHT // 2 + 10, HEIGHT - 120)
+        sdx = random.choice([-1, 1]) * SHARK_PATROL_SPEED
+        if riklys_a_frames:
+            w = riklys_a_frames[0].get_width()
+            h = riklys_a_frames[0].get_height()
+        else:
+            w, h = 32, 16
+        rect = pygame.Rect(sx, sy, w, h)
         underwater_sharks.append({
-            "x": x, "y": y, "dx": dx,
+            "x": sx, "y": sy, "dx": sdx,
             "state": "patrol", "frame_idx": 0, "frame_tick": 0, "rect": rect
         })
+
+# initialize player lives and load HP images (files: 1hp.png .. 5hp.png) before main loop
+player_lives = 5
+
+HP_DIR = os.path.join(IMAGES_DIR, "hp")
+# tweak this to make HP icons larger/smaller
+HP_SCALE = 3.0
+hp_images = []
+for i in range(1, 6):
+    hp_path = os.path.join(HP_DIR, f"{i}hp.png")
+    try:
+        img = pygame.image.load(hp_path).convert_alpha()
+        w, h = img.get_size()
+        img = pygame.transform.scale(img, (int(w * HP_SCALE), int(h * HP_SCALE)))
+        hp_images.append(img)
+    except Exception:
+        # fallback placeholder sized according to HP_SCALE
+        placeholder = pygame.Surface((64 * int(HP_SCALE), 16 * int(HP_SCALE)), pygame.SRCALPHA)
+        pygame.draw.rect(placeholder, (255, 0, 0), placeholder.get_rect(), 2)
+        hp_images.append(placeholder)
 
 
 # --- Main game loop ---
@@ -675,36 +693,39 @@ while running:
            # draw shark (world->screen)
            screen.blit(img, (int(shark["x"] - uw_scroll_x), int(shark["y"])))
 
-           # collision with player (respect invulnerability)
-           if now_ms >= player_invuln_until:
-               # player rect in world coords
-               p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width()//2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
-               if shark["rect"].colliderect(p_rect):
-                   # damage
-                   player_lives -= 1
-                   player_invuln_until = now_ms + INVULN_MS
-                   # knockback: push player a bit horizontally
-                   if shark["x"] < uw_player_x:
-                       uw_player_x += 40
-                   else:
-                       uw_player_x -= 40
-                   # optional: small flash or sound (not added)
-                   if player_lives <= 0:
-                       # player dead: return to surface immediately and clear underwater
-                       show_dugnas = False
-                       underwater_fish.clear()
-                       underwater_sharks.clear()
-                       cast_hook_x = None
-                       cast_hook_y = None
-                       current_fishing_spot = None
-                       last_spawned_count = 0
-                       # could display Game Over screen here
-                       break
+           # collision with player — use smaller hitboxes and NO invulnerability
+           p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width() // 2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
+           p_hit = p_rect.inflate(-int(p_rect.width * 0.4), -int(p_rect.height * 0.4))   # shrink player hitbox
+           s_hit = shark["rect"].inflate(-int(shark["rect"].width * 0.6), -int(shark["rect"].height * 0.6))  # shrink shark hitbox
+           if s_hit.colliderect(p_hit):
+               # immediate damage on collision (no invulnerability)
+               player_lives -= 1
+               # knockback: push player a bit horizontally
+               if shark["x"] < uw_player_x:
+                   uw_player_x += 40
+               else:
+                   uw_player_x -= 40
+               # if lives depleted, clear underwater and return to surface
+               if player_lives <= 0:
+                   show_dugnas = False
+                   underwater_fish.clear()
+                   underwater_sharks.clear()
+                   cast_hook_x = None
+                   cast_hook_y = None
+                   current_fishing_spot = None
+                   last_spawned_count = 0
+                   break
 
        # draw player lives
-       small = pygame.font.SysFont('Arial', 24)
-       lives_surf = small.render(f"Gyvybės: {player_lives}", True, (255, 200, 50))
-       screen.blit(lives_surf, (WIDTH - 180, 20))
+       # draw player lives using hp images (1hp..5hp). index = player_lives - 1 (clamped)
+       if 'hp_images' in globals() and hp_images:
+           hp_idx = max(0, min(player_lives - 1, len(hp_images) - 1))
+           hp_img = hp_images[hp_idx]
+           screen.blit(hp_img, (WIDTH - hp_img.get_width() - 20, 20))
+       else:
+           small = pygame.font.SysFont('Arial', 24)
+           lives_surf = small.render(f"Gyvybės: {player_lives}", True, (255, 200, 50))
+           screen.blit(lives_surf, (WIDTH - 180, 20))
 
        pygame.display.flip()
        clock.tick(60)
