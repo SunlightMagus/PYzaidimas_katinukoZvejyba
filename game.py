@@ -35,6 +35,8 @@ zuvys_sheet_path = os.path.join(IMAGES_DIR, "zuvys_sheet.png")
 # new sheets for prompt/cast
 press_e_path = os.path.join(IMAGES_DIR, "press_e_Sheet.png")
 uzmesti_path = os.path.join(IMAGES_DIR, "uzmesti_Sheet.png")
+# new: bottom/dugnas scene
+dugnas_path = os.path.join(IMAGES_DIR, "dugnas.png")
 
 
 # safe image loads: fallback to simple placeholder instead of crashing
@@ -55,6 +57,9 @@ def safe_load(path, convert_alpha=False, size=None, fill_color=(255, 0, 255, 128
 
 background = safe_load(background_path, convert_alpha=False, size=(WIDTH, HEIGHT))
 bg_width, bg_height = background.get_size()
+
+# load dugnas scene (scaled to window)
+dugnas = safe_load(dugnas_path, convert_alpha=False, size=(WIDTH, HEIGHT))
 
 
 # try load sheets; use placeholders on failure (we'll check bounds when slicing)
@@ -240,8 +245,78 @@ for i in range(UZM_NUM_FRAMES):
 press_e_anim_frame = 0.0
 uzmesti_anim_frame = 0.0
 casting = False
+# show the dugnas scene after cast finishes
+show_dugnas = False
+
+# --- Underwater mini-game assets & state ---
+zuvis_a_path = os.path.join(IMAGES_DIR, "Zuvis_A.png")
+
+# Try load Zuvis_A as a sprite sheet (fall back to single image)
+try:
+    zuvis_a_sheet = pygame.image.load(zuvis_a_path).convert_alpha()
+except Exception:
+    zuvis_a_sheet = None
+
+# build frames from Zuvis_A sprite sheet (8 frames)
+zuvis_a_frames = []
+if zuvis_a_sheet:
+    SHEET_FRAMES = 8
+    sheet_w = zuvis_a_sheet.get_width()
+    sheet_h = zuvis_a_sheet.get_height()
+    # compute per-frame size (sheet is 256x16 -> frame_w=32, frame_h=16)
+    frame_w = max(1, sheet_w // SHEET_FRAMES)
+    frame_h = sheet_h
+
+    for i in range(SHEET_FRAMES):
+        x = i * frame_w
+        # safety: ensure subsurface inside sheet
+        if x + frame_w <= sheet_w and frame_h <= sheet_h:
+            sub = zuvis_a_sheet.subsurface((x, 0, frame_w, frame_h)).copy()
+            # detect magenta placeholder (255,0,255) by sampling center pixel and skip it
+            try:
+                px = sub.get_at((frame_w // 2, frame_h // 2))
+                if (px.r, px.g, px.b) == (255, 0, 255):
+                    continue
+            except Exception:
+                pass
+            sub = pygame.transform.scale(sub, (frame_w * ZUVYS_SCALE, frame_h * ZUVYS_SCALE))
+            zuvis_a_frames.append(sub)
+
+# fallback single image if extraction failed
+if not zuvis_a_frames:
+    zuvis_a_img = safe_load(zuvis_a_path, convert_alpha=True, size=(ZUVYS_FRAME_WIDTH * ZUVYS_SCALE, ZUVYS_FRAME_HEIGHT * ZUVYS_SCALE))
+else:
+    zuvis_a_img = zuvis_a_frames[0]
+
+underwater_fish = []   # list of dicts: {x,y,dx,rect,frame_idx,frame_tick}
+caught_count = 0
+
+# load underwater player sprite (blizge.png)
+blizge_path = os.path.join(IMAGES_DIR, "blizge.png")
+blizge_img = safe_load(blizge_path, convert_alpha=True, size=(ZUVYS_FRAME_WIDTH * ZUVYS_SCALE, ZUVYS_FRAME_HEIGHT * ZUVYS_SCALE))
+
+# underwater player physics state (initialized when entering underwater)
+uw_player_x = WIDTH // 2
+uw_player_y = 80
+uw_player_vy = 0.0
+UW_SPEED = 3.0
+GRAVITY = 0.35
+
+# hook position where the cast ended (set when casting finishes)
+cast_hook_x = None
+cast_hook_y = None
+
+def spawn_underwater_fish(n=6):
+    underwater_fish.clear()
+    for i in range(n):
+        x = random.randint(100, WIDTH - 100)
+        y = random.randint(HEIGHT//2 + 20, HEIGHT - 120)
+        dx = random.choice([-1, 1]) * random.uniform(1.0, 2.2)
+        rect = pygame.Rect(x, y, zuvis_a_img.get_width(), zuvis_a_img.get_height())
+        underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "caught": False})
 
 
+# --- Main game loop ---
 while running:
    # capture events once; record E presses into a flag
    e_pressed = False
@@ -334,6 +409,94 @@ while running:
    screen.fill((0, 0, 0))
    screen.blit(background, (0, 0))  # Always fills window
 
+   # If dugnas (underwater) scene is active, run underwater mini-game and skip normal world rendering
+   if show_dugnas:
+       # background
+       screen.blit(dugnas, (0, 0))
+
+       # --- Update + draw underwater fish (use frames if available) ---
+       for fish in underwater_fish[:]:
+           # movement
+           fish["x"] += fish["dx"]
+           # reverse at screen edges
+           if fish["x"] <= 10 or fish["x"] >= WIDTH - fish["rect"].width - 10:
+               fish["dx"] *= -1
+           fish["rect"].x = int(fish["x"])
+           fish["rect"].y = int(fish["y"])
+
+           # animate fish if frames exist
+           if zuvis_a_frames:
+               # simple per-fish frame tick
+               fish["frame_tick"] = fish.get("frame_tick", 0) + 1
+               if fish["frame_tick"] >= 8:
+                   fish["frame_tick"] = 0
+                   fish["frame_idx"] = (fish.get("frame_idx", 0) + 1) % len(zuvis_a_frames)
+               img = zuvis_a_frames[fish.get("frame_idx", 0)]
+           else:
+               img = zuvis_a_img
+
+           # flip sprite when moving left
+           if fish["dx"] < 0:
+               img = pygame.transform.flip(img, True, False)
+
+           screen.blit(img, (int(fish["x"]), int(fish["y"])))
+
+       # --- Underwater player physics & movement ---
+       # Horizontal move across full screen; gravity constantly pulls player down
+       keys = pygame.key.get_pressed()
+       if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+           uw_player_x -= UW_SPEED
+       if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+           uw_player_x += UW_SPEED
+       # optional swim up (brief negative impulse)
+       if keys[pygame.K_w] or keys[pygame.K_UP]:
+           uw_player_vy = -5.5
+
+       # apply gravity
+       uw_player_vy += GRAVITY
+       uw_player_y += uw_player_vy
+
+       # clamp to screen edges and bottom
+       player_w = blizge_img.get_width()
+       player_h = blizge_img.get_height()
+       uw_player_x = max(0 + player_w // 2, min(uw_player_x, WIDTH - player_w // 2))
+       bottom_y = HEIGHT - player_h - 10
+       if uw_player_y >= bottom_y:
+           uw_player_y = bottom_y
+           uw_player_vy = 0.0
+
+       # draw player centered on (uw_player_x, uw_player_y)
+       screen.blit(blizge_img, (int(uw_player_x - player_w // 2), int(uw_player_y)))
+
+       # draw hook (optional marker) at cast position
+       # kabliukas nebus rodomas kaip geltonas kvadratas (pašalinta)
+
+       # instructions + caught counter (Lithuanian)
+       small = pygame.font.SysFont('Arial', 24)
+       info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
+       screen.blit(info, (20, 20))
+       score = small.render(f"Caught: {caught_count}", True, (255,255,255))
+       screen.blit(score, (20, 50))
+
+       # attempt catch on SPACE: check collision between player rect and fish rect
+       if keys[pygame.K_SPACE]:
+           p_rect = pygame.Rect(int(uw_player_x - player_w // 2), int(uw_player_y), player_w, player_h)
+           for fish in underwater_fish[:]:
+               if fish["rect"].colliderect(p_rect):
+                   underwater_fish.remove(fish)
+                   caught_count += 1
+
+       # return to surface
+       if keys[pygame.K_RETURN]:
+           show_dugnas = False
+           underwater_fish.clear()
+           cast_hook_x = None
+           cast_hook_y = None
+
+       pygame.display.flip()
+       clock.tick(60)
+       continue
+
    # Draw game title
    screen.blit(title_surface, title_rect)
 
@@ -363,12 +526,28 @@ while running:
        screen.blit(press_frame, (int(prompt_x), int(prompt_y)))
        press_e_anim_frame = (press_e_anim_frame + 0.15) % len(press_e_frames)
 
-   # Play uzmesti (cast) animation when casting
+   # Play uzmeti (cast) animation when casting
    if casting and uzmesti_frames:
        idx = int(uzmesti_anim_frame)
-       if idx >= len(uzmeti_frames := uzmesti_frames):  # safe local alias for clarity
-           # finished
+       if idx >= len(uzmesti_frames):
+           # finished -> show dugnas scene and spawn fish; record last hook spot
            casting = False
+           uzmesti_anim_frame = 0.0
+           # compute hand position (same logic as used for drawing)
+           HAND_REL_X_RIGHT = 0.75
+           HAND_REL_X_LEFT = 0.25
+           HAND_REL_Y = 0.55
+           hand_x = cat_x + int((HAND_REL_X_LEFT if facing_left else HAND_REL_X_RIGHT) * FRAME_WIDTH * SCALE)
+           hand_y = cat_y + int(HAND_REL_Y * FRAME_HEIGHT * SCALE)
+           cast_hook_x = hand_x
+           cast_hook_y = hand_y
+           # spawn underwater fish for the mini-game
+           spawn_underwater_fish(6)
+           # initialize underwater player position near the hook/top
+           uw_player_x = cast_hook_x if cast_hook_x is not None else WIDTH // 2
+           uw_player_y = max(30, int(cast_hook_y + 10))  # start a bit below hook
+           uw_player_vy = 0.0
+           show_dugnas = True
        else:
           uz_frame = uzmesti_frames[idx]
 
