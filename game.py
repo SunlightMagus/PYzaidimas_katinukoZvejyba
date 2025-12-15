@@ -694,7 +694,10 @@ while running:
            last_bubble_ms = now_ms
 
        # draw player centered on (uw_player_x, uw_player_y)
-       screen.blit(blizge_img, (int(uw_player_x - player_w // 2), int(uw_player_y)))
+       blizge_draw = blizge_img
+       if uw_facing_left:
+           blizge_draw = pygame.transform.flip(blizge_img, True, False)
+       screen.blit(blizge_draw, (int(uw_player_x - player_w // 2), int(uw_player_y)))
 
        # draw hook (optional marker) at cast position
        # kabliukas nebus rodomas kaip geltonas kvadratas (pašalinta)
@@ -749,33 +752,6 @@ while running:
                cast_hook_y = None
                current_fishing_spot = None
                last_spawned_count = 0
-
-               # --- Update + draw bubbles (burbulai) ---
-               for b in bubbles[:]:
-                   # animate
-                   b["frame_tick"] += 1
-                   if b["frame_tick"] >= 4:
-                       b["frame_tick"] = 0
-                       b["frame_idx"] = (b["frame_idx"] + 1) % len(burbulai_frames)
-                   # move
-                   b["x"] += b["vx"]
-                   b["y"] += b["vy"]
-                   b["rect"].x = int(b["x"])
-                   b["rect"].y = int(b["y"])
-                   # lifetime
-                   if pygame.time.get_ticks() - b["born_ms"] >= BUBBLE_LIFETIME_MS:
-                       bubbles.remove(b)
-                       continue
-                   # collide with sharks -> apply slow and pop bubble
-                   for shark in underwater_sharks:
-                       if shark["rect"].colliderect(b["rect"]):
-                           shark["slow_until"] = pygame.time.get_ticks() + SHARK_SLOW_MS
-                           if b in bubbles:
-                               bubbles.remove(b)
-                           break
-                   # draw bubble
-                   img_b = burbulai_frames[b["frame_idx"]]
-                   screen.blit(img_b, (int(b["x"]), int(b["y"])))
 
        # --- Update + draw bubbles (burbulai) ---
        for b in bubbles[:]:
