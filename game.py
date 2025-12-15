@@ -216,8 +216,12 @@ zuvys_positions = [
    (WIDTH // 2 - 100, HEIGHT // 2 + 150),
 ]
 
-
 zuvys_anim_frame = 0
+
+# --- track fishing spots state ---
+disabled_spots = set()            # spots that were fully fished out
+current_fishing_spot = None       # the spot we're currently fishing (entered underwater from)
+last_spawned_count = 0            # how many fish were spawned for the current spot
 
 
 # --- Press-E / Uzmesti animation setup ---
@@ -338,13 +342,15 @@ cast_hook_x = None
 cast_hook_y = None
 
 def spawn_underwater_fish(n=6):
+    global last_spawned_count
     underwater_fish.clear()
+    last_spawned_count = n
     for i in range(n):
         x = random.randint(100, WIDTH - 100)
         y = random.randint(HEIGHT//2 + 20, HEIGHT - 120)
         dx = random.choice([-1, 1]) * random.uniform(1.0, 2.2)
         rect = pygame.Rect(x, y, zuvis_a_img.get_width(), zuvis_a_img.get_height())
-        underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "Pagauta žuvų": False})
+        underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "frame_idx": 0, "frame_tick": 0, "caught": False})
 
 
 # --- Main game loop ---
@@ -519,10 +525,21 @@ while running:
 
        # return to surface
        if keys[pygame.K_RETURN]:
+           # If all underwater fish were caught for this spot, disable that surface fishing spot
+           if not underwater_fish and current_fishing_spot is not None:
+               try:
+                   zuvys_positions.remove(current_fishing_spot)
+               except ValueError:
+                   pass
+               disabled_spots.add(current_fishing_spot)
+
+           # clear underwater state and return
            show_dugnas = False
            underwater_fish.clear()
            cast_hook_x = None
            cast_hook_y = None
+           current_fishing_spot = None
+           last_spawned_count = 0
 
        pygame.display.flip()
        clock.tick(60)
@@ -572,7 +589,8 @@ while running:
            hand_y = cat_y + int(HAND_REL_Y * FRAME_HEIGHT * SCALE)
            cast_hook_x = hand_x
            cast_hook_y = hand_y
-           # spawn underwater fish for the mini-game
+           # spawn underwater fish for the mini-game and remember which surface spot we came from
+           current_fishing_spot = nearest_fish
            spawn_underwater_fish(6)
            # initialize underwater player position near the hook/top
            uw_player_x = cast_hook_x if cast_hook_x is not None else WIDTH // 2
