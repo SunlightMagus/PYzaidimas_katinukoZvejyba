@@ -1,6 +1,7 @@
 import pygame
 import os
 import random
+import math
 
 
 pygame.init()
@@ -334,6 +335,7 @@ blizge_img = safe_load(
 uw_player_x = WIDTH // 2
 uw_player_y = 80
 uw_player_vy = 0.0
+uw_scroll_x = 0  # camera offset for underwater world (fix NameError when entering underwater)
 UW_SPEED = 3.0
 GRAVITY = 0.35
 
@@ -351,6 +353,75 @@ def spawn_underwater_fish(n=6):
         dx = random.choice([-1, 1]) * random.uniform(1.0, 2.2)
         rect = pygame.Rect(x, y, zuvis_a_img.get_width(), zuvis_a_img.get_height())
         underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "frame_idx": 0, "frame_tick": 0, "caught": False})
+
+
+# --- Shark (riklys) assets & state ---
+RIKLYS_SHEET_A_PATH = os.path.join(IMAGES_DIR, "riklys_a.png")  # idle/swim sheet (256x16, 8 frames)
+RIKLYS_SHEET_B_PATH = os.path.join(IMAGES_DIR, "riklys_b.png")  # attack sheet (256x16, 8 frames)
+RIKLYS_SHEET_FRAMES = 8
+RIKLYS_SCALE = int(ZUVA_SCALE) if 'ZUVA_SCALE' in globals() else 3
+
+def build_sheet_frames(path, frames_count=8, scale=RIKLYS_SCALE):
+    frames = []
+    try:
+        sheet = pygame.image.load(path).convert_alpha()
+        sheet_w, sheet_h = sheet.get_width(), sheet.get_height()
+        frame_w = max(1, sheet_w // frames_count)
+        for i in range(frames_count):
+            x = i * frame_w
+            if x + frame_w <= sheet_w:
+                sub = sheet.subsurface((x, 0, frame_w, sheet_h)).copy()
+                # skip magenta placeholder frames if detected
+                try:
+                    px = sub.get_at((frame_w // 2, sheet_h // 2))
+                    if (px.r, px.g, px.b) == (255, 0, 255):
+                        continue
+                except Exception:
+                    pass
+                sub = pygame.transform.scale(sub, (int(frame_w * scale), int(sheet_h * scale)))
+                frames.append(sub)
+    except Exception:
+        pass
+    return frames
+
+riklys_a_frames = build_sheet_frames(RIKLYS_SHEET_A_PATH, RIKLYS_SHEET_FRAMES, RIKLYS_SCALE)
+riklys_b_frames = build_sheet_frames(RIKLYS_SHEET_B_PATH, RIKLYS_SHEET_FRAMES, RIKLYS_SCALE)
+# fallback placeholders if loading failed
+if not riklys_a_frames:
+    placeholder = pygame.Surface((32 * RIKLYS_SCALE, 16 * RIKLYS_SCALE), pygame.SRCALPHA)
+    pygame.draw.rect(placeholder, (200, 200, 200), placeholder.get_rect(), 2)
+    riklys_a_frames = [placeholder]
+if not riklys_b_frames:
+    riklys_b_frames = riklys_a_frames.copy()
+
+# sharks list (world coords)
+underwater_sharks = []   # each: {"x","y","dx","state","frame_idx","frame_tick","rect"}
+# shark behaviour params
+SHARK_PATROL_SPEED = 1.0
+SHARK_ATTACK_SPEED = 2.4
+SHARK_ATTACK_RANGE = 140     # start attack when player closer than this (pixels)
+SHARK_PATROL_TURN_CHANCE = 0.01
+# player lives & invulnerability
+player_lives = 3
+INVULN_MS = 1500
+player_invuln_until = 0
+
+
+# function to spawn sharks
+def spawn_sharks(n=2, x_min=200, x_max=None):
+    if x_max is None:
+        x_max = max(1000, WIDTH * 2)
+    for i in range(n):
+        x = random.randint(x_min, x_max)
+        y = random.randint(HEIGHT//2 + 10, HEIGHT - 120)
+        dx = random.choice([-1, 1]) * SHARK_PATROL_SPEED
+        w = riklys_a_frames[0].get_width()
+        h = riklys_a_frames[0].get_height()
+        rect = pygame.Rect(x, y, w, h)
+        underwater_sharks.append({
+            "x": x, "y": y, "dx": dx,
+            "state": "patrol", "frame_idx": 0, "frame_tick": 0, "rect": rect
+        })
 
 
 # --- Main game loop ---
@@ -547,6 +618,94 @@ while running:
                current_fishing_spot = None
                last_spawned_count = 0
 
+       # --- Update + draw sharks (riklys) ---
+       now_ms = pygame.time.get_ticks()
+       for shark in underwater_sharks[:]:
+           # distance to player (player world coords: uw_player_x, uw_player_y)
+           dxp = (uw_player_x - shark["x"])
+           dyp = (uw_player_y - shark["y"])
+           dist = (dxp*dxp + dyp*dyp) ** 0.5
+
+           # decide state
+           if dist <= SHARK_ATTACK_RANGE:
+               shark["state"] = "attack"
+               # move toward player
+               norm = dist if dist != 0 else 1
+               shark["dx"] = (dxp / norm) * SHARK_ATTACK_SPEED
+               # small vertical tracking
+               shark["y"] += (dyp / norm) * 0.6
+           else:
+               # patrol behaviour
+               if shark["state"] != "patrol":
+                   shark["state"] = "patrol"
+                   shark["dx"] = random.choice([-1, 1]) * SHARK_PATROL_SPEED
+               # random turn
+               if random.random() < SHARK_PATROL_TURN_CHANCE:
+                   shark["dx"] *= -1
+               # gentle vertical bobbing
+               shark["y"] += math.sin(pygame.time.get_ticks() / 600.0 + shark["x"]) * 0.2
+
+           # apply horizontal move & clamp to world
+           shark["x"] += shark["dx"]
+           if shark["x"] < 10:
+               shark["x"] = 10
+               shark["dx"] *= -1
+           if 'WORLD_WIDTH' in globals() and shark["x"] > WORLD_WIDTH - shark["rect"].width - 10:
+               shark["x"] = WORLD_WIDTH - shark["rect"].width - 10
+               shark["dx"] *= -1
+
+           shark["rect"].x = int(shark["x"])
+           shark["rect"].y = int(shark["y"])
+
+           # animate appropriate frame set
+           shark["frame_tick"] = shark.get("frame_tick", 0) + 1
+           if shark["frame_tick"] >= 8:
+               shark["frame_tick"] = 0
+               shark["frame_idx"] = (shark.get("frame_idx", 0) + 1) % RIKLYS_SHEET_FRAMES
+
+           if shark["state"] == "attack":
+               img = riklys_b_frames[shark["frame_idx"] % len(riklys_b_frames)]
+           else:
+               img = riklys_a_frames[shark["frame_idx"] % len(riklys_a_frames)]
+
+           # flip when moving left
+           if shark["dx"] < 0:
+               img = pygame.transform.flip(img, True, False)
+
+           # draw shark (world->screen)
+           screen.blit(img, (int(shark["x"] - uw_scroll_x), int(shark["y"])))
+
+           # collision with player (respect invulnerability)
+           if now_ms >= player_invuln_until:
+               # player rect in world coords
+               p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width()//2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
+               if shark["rect"].colliderect(p_rect):
+                   # damage
+                   player_lives -= 1
+                   player_invuln_until = now_ms + INVULN_MS
+                   # knockback: push player a bit horizontally
+                   if shark["x"] < uw_player_x:
+                       uw_player_x += 40
+                   else:
+                       uw_player_x -= 40
+                   # optional: small flash or sound (not added)
+                   if player_lives <= 0:
+                       # player dead: return to surface immediately and clear underwater
+                       show_dugnas = False
+                       underwater_fish.clear()
+                       underwater_sharks.clear()
+                       cast_hook_x = None
+                       cast_hook_y = None
+                       current_fishing_spot = None
+                       last_spawned_count = 0
+                       # could display Game Over screen here
+                       break
+
+       # draw player lives
+       small = pygame.font.SysFont('Arial', 24)
+       lives_surf = small.render(f"Gyvybės: {player_lives}", True, (255, 200, 50))
+       screen.blit(lives_surf, (WIDTH - 180, 20))
+
        pygame.display.flip()
        clock.tick(60)
        continue
@@ -598,6 +757,18 @@ while running:
            # spawn underwater fish for the mini-game and remember which surface spot we came from
            current_fishing_spot = nearest_fish
            spawn_underwater_fish(6)
+
+           # spawn sharks so they are visible during the mini-game
+           # place sharks near the hook (adjust counts / ranges as needed)
+           underwater_sharks.clear()
+           try:
+               sx_min = int(cast_hook_x + 60)
+               sx_max = int(cast_hook_x + 400)
+           except Exception:
+               sx_min = 200
+               sx_max = 800
+           spawn_sharks(n=2, x_min=sx_min, x_max=sx_max)
+
            # initialize underwater player position near the hook/top
            uw_player_x = cast_hook_x if cast_hook_x is not None else WIDTH // 2
            uw_player_y = max(30, int(cast_hook_y + 10))  # start a bit below hook
