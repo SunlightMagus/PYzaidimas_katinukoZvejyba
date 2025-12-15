@@ -61,6 +61,25 @@ bg_width, bg_height = background.get_size()
 # load dugnas scene (scaled to window)
 dugnas = safe_load(dugnas_path, convert_alpha=False, size=(WIDTH, HEIGHT))
 
+# play looping background music from sounds/littlefishes.mp3 (safe if missing)
+SOUNDS_DIR = os.path.join(BASE_DIR, "sounds")
+music_path = os.path.join(SOUNDS_DIR, "littlefishes.mp3")
+try:
+    if os.path.exists(music_path):
+        try:
+            pygame.mixer.init()
+        except Exception:
+            pass
+        try:
+            pygame.mixer.music.load(music_path)
+            pygame.mixer.music.set_volume(0.5)
+            pygame.mixer.music.play(-1)  # loop indefinitely
+        except Exception:
+            # ignore load/play errors
+            pass
+except Exception:
+    pass
+
 
 # try load sheets; use placeholders on failure (we'll check bounds when slicing)
 try:
@@ -169,6 +188,10 @@ ZUVYS_FRAME_WIDTH = 64
 ZUVYS_FRAME_HEIGHT = 64
 ZUVYS_NUM_FRAMES = 4
 ZUVYS_SCALE = 2
+
+# new: underwater Zuvis_A scale and blizgės (player) scale
+ZUVA_SCALE = 3     # padidina povandenines žuvis
+BLIZGE_SCALE = 0.5 # sumažina blizgės paveikslėlį (tweak: 0.2..0.8)
 
 
 # Zuvys frames (safe)
@@ -279,12 +302,13 @@ if zuvis_a_sheet:
                     continue
             except Exception:
                 pass
-            sub = pygame.transform.scale(sub, (frame_w * ZUVYS_SCALE, frame_h * ZUVYS_SCALE))
+            # scale underwater fish using ZUVA_SCALE (separate from surface fish scale)
+            sub = pygame.transform.scale(sub, (int(frame_w * ZUVA_SCALE), int(frame_h * ZUVA_SCALE)))
             zuvis_a_frames.append(sub)
 
 # fallback single image if extraction failed
 if not zuvis_a_frames:
-    zuvis_a_img = safe_load(zuvis_a_path, convert_alpha=True, size=(ZUVYS_FRAME_WIDTH * ZUVYS_SCALE, ZUVYS_FRAME_HEIGHT * ZUVYS_SCALE))
+    zuvis_a_img = safe_load(zuvis_a_path, convert_alpha=True, size=(int(ZUVYS_FRAME_WIDTH * ZUVA_SCALE), int(ZUVYS_FRAME_HEIGHT * ZUVA_SCALE)))
 else:
     zuvis_a_img = zuvis_a_frames[0]
 
@@ -293,7 +317,14 @@ caught_count = 0
 
 # load underwater player sprite (blizge.png)
 blizge_path = os.path.join(IMAGES_DIR, "blizge.png")
-blizge_img = safe_load(blizge_path, convert_alpha=True, size=(ZUVYS_FRAME_WIDTH * ZUVYS_SCALE, ZUVYS_FRAME_HEIGHT * ZUVYS_SCALE))
+blizge_img = safe_load(
+    blizge_path,
+    convert_alpha=True,
+    size=(
+        int(ZUVYS_FRAME_WIDTH * ZUVA_SCALE * BLIZGE_SCALE),
+        int(ZUVYS_FRAME_HEIGHT * ZUVA_SCALE * BLIZGE_SCALE),
+    ),
+)
 
 # underwater player physics state (initialized when entering underwater)
 uw_player_x = WIDTH // 2
@@ -313,7 +344,7 @@ def spawn_underwater_fish(n=6):
         y = random.randint(HEIGHT//2 + 20, HEIGHT - 120)
         dx = random.choice([-1, 1]) * random.uniform(1.0, 2.2)
         rect = pygame.Rect(x, y, zuvis_a_img.get_width(), zuvis_a_img.get_height())
-        underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "caught": False})
+        underwater_fish.append({"x": x, "y": y, "dx": dx, "rect": rect, "Pagauta žuvų": False})
 
 
 # --- Main game loop ---
@@ -475,7 +506,7 @@ while running:
        small = pygame.font.SysFont('Arial', 24)
        info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
        screen.blit(info, (20, 20))
-       score = small.render(f"Caught: {caught_count}", True, (255,255,255))
+       score = small.render(f"Pagauta žuvų: {caught_count}", True, (255,255,255))
        screen.blit(score, (20, 50))
 
        # attempt catch on SPACE: check collision between player rect and fish rect
