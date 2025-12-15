@@ -81,6 +81,41 @@ try:
 except Exception:
     pass
 
+# load hurt sound for shark hits (safe)
+hurt_sound = None
+try:
+    hurt_path = os.path.join(SOUNDS_DIR, "hurt.mp3")
+    if os.path.exists(hurt_path):
+        try:
+            # ensure mixer initialized
+            pygame.mixer.init()
+        except Exception:
+            pass
+        try:
+            hurt_sound = pygame.mixer.Sound(hurt_path)
+            hurt_sound.set_volume(0.7)
+        except Exception:
+            hurt_sound = None
+except Exception:
+    hurt_sound = None
+
+# load reelin sound for catching fish (safe)
+reelin_sound = None
+try:
+    reelin_path = os.path.join(SOUNDS_DIR, "reelin.mp3")
+    if os.path.exists(reelin_path):
+        try:
+            pygame.mixer.init()
+        except Exception:
+            pass
+        try:
+            reelin_sound = pygame.mixer.Sound(reelin_path)
+            reelin_sound.set_volume(0.7)
+        except Exception:
+            reelin_sound = None
+except Exception:
+    reelin_sound = None
+
 
 # try load sheets; use placeholders on failure (we'll check bounds when slicing)
 try:
@@ -445,6 +480,16 @@ for i in range(1, 6):
 INVULN_MS = 1500               # milliseconds of invulnerability after a hit
 player_invuln_until = 0
 
+# dead icon for caught-fish indicator
+dead_path = os.path.join(IMAGES_DIR, "dead.png")
+dead_img = safe_load(dead_path, convert_alpha=True)
+# optional scale (adjust DEAD_ICON_SCALE as needed)
+DEAD_ICON_SCALE = 1.5
+try:
+    dead_img = pygame.transform.scale(dead_img, (int(dead_img.get_width() * DEAD_ICON_SCALE), int(dead_img.get_height() * DEAD_ICON_SCALE)))
+except Exception:
+    pass
+
 # --- Main game loop ---
 while running:
    # capture events once; record E presses into a flag
@@ -604,8 +649,15 @@ while running:
        small = pygame.font.SysFont('Arial', 24)
        info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
        screen.blit(info, (20, 20))
-       score = small.render(f"Pagauta žuvų: {caught_count}", True, (255,255,255))
-       screen.blit(score, (20, 50))
+       # show dead icon + numeric caught count (fallback to text if icon missing)
+       icon_x, icon_y = 20, 50
+       if 'dead_img' in globals() and dead_img:
+           screen.blit(dead_img, (icon_x, icon_y))
+           cnt_surf = small.render(str(caught_count), True, (255, 255, 255))
+           screen.blit(cnt_surf, (icon_x + dead_img.get_width() + 8, icon_y + (dead_img.get_height() - cnt_surf.get_height()) // 2))
+       else:
+           score = small.render(f"Pagauta žuvų: {caught_count}", True, (255,255,255))
+           screen.blit(score, (20, 50))
 
        # attempt catch on SPACE: check collision between player rect and fish rect
        if keys[pygame.K_SPACE]:
@@ -614,6 +666,12 @@ while running:
                if fish["rect"].colliderect(p_rect):
                    underwater_fish.remove(fish)
                    caught_count += 1
+                   # play reelin sound when a fish is caught
+                   try:
+                       if 'reelin_sound' in globals() and reelin_sound:
+                           reelin_sound.play()
+                   except Exception:
+                       pass
 
        # return to surface
        if keys[pygame.K_RETURN]:
@@ -704,6 +762,12 @@ while running:
                if s_hit.colliderect(p_hit):
                    # apply damage and activate invulnerability
                    player_lives -= 1
+                   # play hurt sound if available
+                   try:
+                       if hurt_sound:
+                           hurt_sound.play()
+                   except Exception:
+                       pass
                    player_invuln_until = now_ms + INVULN_MS
                    # knockback
                    if shark["x"] < uw_player_x:
