@@ -27,11 +27,30 @@ title_rect = title_surface.get_rect(center=(WIDTH // 2, 60))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGES_DIR = os.path.join(BASE_DIR, "images")
 
-
+# define paths FIRST
 background_path = os.path.join(IMAGES_DIR, "ezeras.png")
 sprite_sheet_path = os.path.join(IMAGES_DIR, "valtis_anim.png")
 varna_sheet_path = os.path.join(IMAGES_DIR, "varna_Sheet.png")
 zuvys_sheet_path = os.path.join(IMAGES_DIR, "zuvys_sheet.png")
+press_e_path = os.path.join(IMAGES_DIR, "press_e_Sheet.png")
+uzmesti_path = os.path.join(IMAGES_DIR, "uzmesti_Sheet.png")
+dugnas_path = os.path.join(IMAGES_DIR, "dugnas.png")
+
+# load sheets safely (convert_alpha) after paths exist
+try:
+    sprite_sheet = pygame.image.load(sprite_sheet_path).convert_alpha()
+except Exception:
+    sprite_sheet = None
+
+try:
+    varna_sheet = pygame.image.load(varna_sheet_path).convert_alpha()
+except Exception:
+    varna_sheet = None
+
+try:
+    zuvys_sheet = pygame.image.load(zuvys_sheet_path).convert_alpha()
+except Exception:
+    zuvys_sheet = None
 
 # new sheets for prompt/cast
 press_e_path = os.path.join(IMAGES_DIR, "press_e_Sheet.png")
@@ -116,22 +135,43 @@ try:
 except Exception:
     reelin_sound = None
 
-
-# try load sheets; use placeholders on failure (we'll check bounds when slicing)
+# load coin sound
+coin_sound = None
 try:
-    sprite_sheet = pygame.image.load(sprite_sheet_path).convert_alpha()
+    coin_path = os.path.join(SOUNDS_DIR, "coins.mp3")
+    if os.path.exists(coin_path):
+        try:
+            pygame.mixer.init()
+        except Exception:
+            pass
+        try:
+            coin_sound = pygame.mixer.Sound(coin_path)
+            coin_sound.set_volume(0.7)
+        except Exception:
+            coin_sound = None
 except Exception:
-    sprite_sheet = None
+    coin_sound = None
 
+# --- Coin (pinigas) sprite: 128x16 (8 frames horizontally, each 16x16) ---
+coin_frames = []
 try:
-    varna_sheet = pygame.image.load(varna_sheet_path).convert_alpha()
+    coin_sheet = pygame.image.load(os.path.join(IMAGES_DIR, "pinigas.png")).convert_alpha()
+    frame_w, frame_h, frames_count = 16, 16, 8
+    COIN_SCALE = 2  # padidinimas
+    for i in range(frames_count):
+        sub = coin_sheet.subsurface((i * frame_w, 0, frame_w, frame_h)).copy()
+        sub = pygame.transform.scale(sub, (frame_w * COIN_SCALE, frame_h * COIN_SCALE))
+        coin_frames.append(sub)
 except Exception:
-    varna_sheet = None
+    # fallback paprastas apskritimas
+    ph = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.draw.circle(ph, (255, 220, 0), (16, 16), 12)
+    pygame.draw.circle(ph, (200, 160, 0), (16, 16), 12, 3)
+    coin_frames = [ph]
 
-try:
-    zuvys_sheet = pygame.image.load(zuvys_sheet_path).convert_alpha()
-except Exception:
-    zuvys_sheet = None
+# coins state
+coins = []  # each: {"x","y","rect","frame_idx","frame_tick"}
+coins_collected = 0
 
 
 # --- Animation setup ---
@@ -759,7 +799,7 @@ while running:
        small = pygame.font.SysFont('Arial', 24)
        info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
        screen.blit(info, (20, 20))
-       # show dead icon + numeric caught count (fallback to text if icon missing)
+       # show dead icon + numeric caught count
        icon_x, icon_y = 20, 50
        if 'dead_img' in globals() and dead_img:
            screen.blit(dead_img, (icon_x, icon_y))
@@ -768,6 +808,10 @@ while running:
        else:
            score = small.render(f"Pagauta žuvų: {caught_count}", True, (255,255,255))
            screen.blit(score, (20, 50))
+
+       # coins collected indicator
+       coins_surf = small.render(f"Monetos: {coins_collected} (kas 3 = +1 gyvybė)", True, (255, 230, 120))
+       screen.blit(coins_surf, (20, 80))
 
        # attempt catch on SPACE: check collision between player rect and fish rect
        if keys[pygame.K_SPACE]:
@@ -841,6 +885,32 @@ while running:
            # draw bubble
            img_b = burbulai_frames[b["frame_idx"]]
            screen.blit(img_b, (int(b["x"] - uw_scroll_x), int(b["y"])))
+
+       # --- Update + draw coins ---
+       for c in coins[:]:
+          # animate
+          c["frame_tick"] += 1
+          if c["frame_tick"] >= 6:
+              c["frame_tick"] = 0
+              c["frame_idx"] = (c["frame_idx"] + 1) % len(coin_frames)
+          # player collision
+          p_rect = pygame.Rect(int(uw_player_x - blizge_img.get_width() // 2), int(uw_player_y), blizge_img.get_width(), blizge_img.get_height())
+          if p_rect.colliderect(c["rect"]):
+              coins.remove(c)
+              # sound
+              try:
+                  if coin_sound:
+                      coin_sound.play()
+              except Exception:
+                  pass
+              # count + life every 3
+              coins_collected += 1
+              if coins_collected % 3 == 0:
+                  player_lives = min(player_lives + 1, 9)
+              continue
+          # draw coin (world->screen, consistent with bubbles/sharks if using uw_scroll_x)
+          coin_img = coin_frames[c["frame_idx"]]
+          screen.blit(coin_img, (int(c["x"] - uw_scroll_x), int(c["y"])))
 
        # --- Update + draw sharks (riklys) ---
        now_ms = pygame.time.get_ticks()
@@ -1017,9 +1087,16 @@ while running:
            # spawn a few static platforms underwater (simple layout)
            underwater_platforms.clear()
            pw, ph = platform_img.get_width(), platform_img.get_height()
-           # place 2 platforms higher
            for px, py in [(300, HEIGHT//2 + 40), (860, HEIGHT//2 + 70)]:
                underwater_platforms.append(pygame.Rect(px, py, pw, ph))
+
+           # spawn 1–2 coins near platforms
+           coins.clear()
+           if coin_frames:
+               cw, ch = coin_frames[0].get_width(), coin_frames[0].get_height()
+               for cx, cy in [(300 + pw // 2, HEIGHT//2 + 10), (860 + pw // 2, HEIGHT//2 + 20)]:
+                   rect = pygame.Rect(cx, cy, cw, ch)
+                   coins.append({"x": cx, "y": cy, "rect": rect, "frame_idx": 0, "frame_tick": 0})
 
            show_dugnas = True
        else:
