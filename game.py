@@ -533,6 +533,8 @@ def spawn_sharks(n=2, x_min=200, x_max=None):
 
 # initialize player lives and load HP images (files: 1hp.png .. 5hp.png) before main loop
 player_lives = 5
+MAX_LIVES = 5
+COST_PER_LIFE = 3
 
 HP_DIR = os.path.join(IMAGES_DIR, "hp")
 # tweak this to make HP icons larger/smaller
@@ -655,6 +657,33 @@ while running:
                surf = font_menu.render(txt, True, (0, 0, 0))
                screen.blit(surf, (tx, ty))
                ty += 40
+
+           # --- Buy Life button ---
+           btn_w, btn_h = 260, 56
+           btn_x = card_x + card_w - btn_w - 40
+           btn_y = card_y + card_h - btn_h - 40
+           buy_btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+           # button state colors
+           can_buy = (player_lives < MAX_LIVES) and (coins_collected >= COST_PER_LIFE)
+           bg_color = (60, 200, 80) if can_buy else (150, 150, 150)
+           pygame.draw.rect(screen, bg_color, buy_btn_rect, border_radius=8)
+           pygame.draw.rect(screen, (30, 30, 30), buy_btn_rect, 2, border_radius=8)
+           label = f"Pirkti gyvybę ({COST_PER_LIFE} m.)"
+           lbl_surf = font_menu.render(label, True, (0, 0, 0))
+           lbl_rect = lbl_surf.get_rect(center=buy_btn_rect.center)
+           screen.blit(lbl_surf, lbl_rect)
+           # helper text: lives/coins
+           info_font = pygame.font.SysFont('Arial', 24, bold=False)
+           info_text = f"Gyvybės: {player_lives}/{MAX_LIVES} | Monetos: {coins_collected}"
+           info_surf = info_font.render(info_text, True, (0, 0, 0))
+           screen.blit(info_surf, (card_x + 40, card_y + card_h - 40 - info_surf.get_height()))
+
+           # handle mouse click to buy
+           if pygame.mouse.get_pressed()[0]:  # left button down
+               mx, my = pygame.mouse.get_pos()
+               if buy_btn_rect.collidepoint(mx, my) and can_buy:
+                   player_lives = min(player_lives + 1, MAX_LIVES)
+                   coins_collected -= COST_PER_LIFE
 
        pygame.display.flip()
        clock.tick(60)
