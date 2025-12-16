@@ -490,33 +490,39 @@ try:
 except Exception:
     pass
 
-# --- Bubbles (burbulai) sprite sheet: 80x8, 10 frames horizontally (each 8x8) ---
-BUBBLE_SCALE = 3
+# --- Underwater platforms ---
+platform_img_path = os.path.join(IMAGES_DIR, "platforma.png")
+platform_img = safe_load(platform_img_path, convert_alpha=True)  # 178x109
+underwater_platforms = []  # list of pygame.Rect
+PLATFORM_TOP_COLLIDE_H = 20  # tik viršutinė 20px juosta "kieta" atsistoti
+
+# --- Bubbles (burbulai) sprite sheet: 80x8 (10 frames horizontally, 8x8 each) ---
 burbulai_frames = []
 try:
     burb_sheet = pygame.image.load(os.path.join(IMAGES_DIR, "burbulai.png")).convert_alpha()
     frame_w, frame_h, frames_count = 8, 8, 10
+    BUBBLE_SCALE = 3
     for i in range(frames_count):
         sub = burb_sheet.subsurface((i * frame_w, 0, frame_w, frame_h)).copy()
         sub = pygame.transform.scale(sub, (frame_w * BUBBLE_SCALE, frame_h * BUBBLE_SCALE))
         burbulai_frames.append(sub)
 except Exception:
     # fallback single frame
-    ph = pygame.Surface((8 * BUBBLE_SCALE, 8 * BUBBLE_SCALE), pygame.SRCALPHA)
-    pygame.draw.circle(ph, (180, 220, 255), (4 * BUBBLE_SCALE, 4 * BUBBLE_SCALE), 4 * BUBBLE_SCALE, 2)
+    ph = pygame.Surface((8 * 3, 8 * 3), pygame.SRCALPHA)
+    pygame.draw.circle(ph, (180, 220, 255), (12, 12), 10, 2)
     burbulai_frames = [ph]
 
-# bubbles state
-bubbles = []  # each: {"x","y","vx","vy","born_ms","frame_idx","frame_tick","rect"}
+# bubbles state + params
+bubbles = []  # {"x","y","vx","vy","born_ms","frame_idx","frame_tick","rect"}
 BUBBLE_SPEED = 6.0
 BUBBLE_LIFETIME_MS = 1500
 BUBBLE_COOLDOWN_MS = 120
 last_bubble_ms = 0
 
-# underwater facing
+# underwater facing for blizgė flip
 uw_facing_left = False
 
-# shark slow effect
+# shark slow effect from bubbles
 SHARK_SLOW_MS = 2000
 
 # --- Main game loop ---
@@ -616,6 +622,9 @@ while running:
    if show_dugnas:
        # background
        screen.blit(dugnas, (0, 0))
+       # draw platforms
+       for plat in underwater_platforms:
+           screen.blit(platform_img, plat.topleft)
 
        # --- Update + draw underwater fish (use frames if available) ---
        for fish in underwater_fish[:]:
@@ -626,6 +635,18 @@ while running:
                fish["dx"] *= -1
            fish["rect"].x = int(fish["x"])
            fish["rect"].y = int(fish["y"])
+           # collide with platforms -> bounce horizontally only at sides (avoid sticking on top)
+           for plat in underwater_platforms:
+               if fish["rect"].colliderect(plat):
+                   # only respond if overlapping platform's sides (ignore top area)
+                   if fish["rect"].centery > plat.top + PLATFORM_TOP_COLLIDE_H:
+                       if fish["rect"].centerx < plat.centerx and fish["rect"].right > plat.left:
+                           fish["x"] = plat.left - fish["rect"].width
+                       elif fish["rect"].centerx >= plat.centerx and fish["rect"].left < plat.right:
+                           fish["x"] = plat.right
+                       fish["dx"] *= -1
+                       fish["rect"].x = int(fish["x"])
+                       break
 
            # animate fish if frames exist
            if zuvis_a_frames:
@@ -647,6 +668,9 @@ while running:
        # --- Underwater player physics & movement ---
        # Horizontal move across full screen; gravity constantly pulls player down
        keys = pygame.key.get_pressed()
+       prev_x, prev_y = uw_player_x, uw_player_y
+       # ankstesnis stačiakampis prieš fizikos atnaujinimą (naudojamas tikrinimui)
+       prev_rect = pygame.Rect(int(prev_x - blizge_img.get_width() // 2), int(prev_y), blizge_img.get_width(), blizge_img.get_height())
        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
            uw_player_x -= UW_SPEED
        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
@@ -667,6 +691,35 @@ while running:
        if uw_player_y >= bottom_y:
            uw_player_y = bottom_y
            uw_player_vy = 0.0
+
+       # resolve collisions with platforms (tik viršus kietas; šonai tik blokuoja)
+       p_rect = pygame.Rect(int(uw_player_x - player_w // 2), int(uw_player_y), player_w, player_h)
+       prev_rect = pygame.Rect(int(prev_x - player_w // 2), int(prev_y), player_w, player_h)
+       for plat in underwater_platforms:
+           # kieta tik viršutinė platformos juosta
+           plat_top = pygame.Rect(plat.x, plat.y, plat.width, max(28, PLATFORM_TOP_COLLIDE_H))
+           # leidžiame kristi laisvai, išskyrus kai šį frame kirtome viršų
+           crossing_top = (
+               uw_player_vy > 0 and
+               prev_rect.bottom <= plat_top.top and
+               p_rect.bottom >= plat_top.top and
+               p_rect.centerx >= plat.left and p_rect.centerx <= plat.right
+           )
+           if crossing_top:
+               # pastatyk ant viršaus
+               uw_player_y = plat_top.top - player_h
+               uw_player_vy = 0.0
+               p_rect.y = int(uw_player_y)
+               # pereik prie kitos platformos (nebeblokuok šonais šiame frame)
+               continue
+           # šonai: blokuoti tik jei aiškiai ne ant viršaus
+           if p_rect.colliderect(plat) and p_rect.bottom > plat_top.top + 2:
+               # nustatyk atėjimo pusę pagal ankstesnę padėtį
+               if prev_rect.right <= plat.left and p_rect.right > plat.left:
+                   uw_player_x = plat.left - player_w // 2
+               elif prev_rect.left >= plat.right and p_rect.left < plat.right:
+                   uw_player_x = plat.right + player_w // 2
+               p_rect.x = int(uw_player_x - player_w // 2)
 
        # update underwater facing based on last horizontal input
        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
@@ -769,6 +822,15 @@ while running:
            if pygame.time.get_ticks() - b["born_ms"] >= BUBBLE_LIFETIME_MS:
                bubbles.remove(b)
                continue
+           # collide with platforms -> pop bubble
+           popped = False
+           for plat in underwater_platforms:
+               if b["rect"].colliderect(plat):
+                   bubbles.remove(b)
+                   popped = True
+                   break
+           if popped:
+               continue
            # collide with sharks -> apply slow and pop bubble
            for shark in underwater_sharks:
                if shark["rect"].colliderect(b["rect"]):
@@ -778,7 +840,7 @@ while running:
                    break
            # draw bubble
            img_b = burbulai_frames[b["frame_idx"]]
-           screen.blit(img_b, (int(b["x"]), int(b["y"])))
+           screen.blit(img_b, (int(b["x"] - uw_scroll_x), int(b["y"])))
 
        # --- Update + draw sharks (riklys) ---
        now_ms = pygame.time.get_ticks()
@@ -951,6 +1013,14 @@ while running:
            uw_player_x = cast_hook_x if cast_hook_x is not None else WIDTH // 2
            uw_player_y = max(30, int(cast_hook_y + 10))  # start a bit below hook
            uw_player_vy = 0.0
+
+           # spawn a few static platforms underwater (simple layout)
+           underwater_platforms.clear()
+           pw, ph = platform_img.get_width(), platform_img.get_height()
+           # place 2 platforms higher
+           for px, py in [(300, HEIGHT//2 + 40), (860, HEIGHT//2 + 70)]:
+               underwater_platforms.append(pygame.Rect(px, py, pw, ph))
+
            show_dugnas = True
        else:
           uz_frame = uzmesti_frames[idx]
