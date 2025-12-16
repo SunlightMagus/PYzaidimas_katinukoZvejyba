@@ -1081,6 +1081,34 @@ while running:
    if not casting:
       screen.blit(frame, (cat_x, cat_y))
 
+   # --- Surface HUD: caught fish + coins + lives ---
+   small = pygame.font.SysFont('Arial', 24)
+   # caught fish icon + count
+   icon_x, icon_y = 20, 50
+   if 'dead_img' in globals() and dead_img:
+       screen.blit(dead_img, (icon_x, icon_y))
+       cnt_surf = small.render(str(caught_count), True, (255, 255, 255))
+       screen.blit(cnt_surf, (icon_x + dead_img.get_width() + 8,
+                              icon_y + (dead_img.get_height() - cnt_surf.get_height()) // 2))
+   else:
+       score = small.render(f"Pagauta žuvų: {caught_count}", True, (255,255,255))
+       screen.blit(score, (20, 50))
+
+   # coins icon + count (nuleista žemiau)
+   coin_icon_pos = (20, 120)
+   screen.blit(pinigas_icon, coin_icon_pos)
+   coins_text = small.render(str(coins_collected), True, (255,230,120))
+   screen.blit(coins_text, (coin_icon_pos[0] + pinigas_icon.get_width() + 8,
+                            coin_icon_pos[1] + (pinigas_icon.get_height() - coins_text.get_height()) // 2))
+
+   # player lives (HP icons)
+   if 'hp_images' in globals() and hp_images:
+       hp_idx = max(0, min(player_lives - 1, len(hp_images) - 1))
+       hp_img = hp_images[hp_idx]
+       screen.blit(hp_img, (WIDTH - hp_img.get_width() - 20, 20))
+   else:
+       lives_surf = small.render(f"Gyvybės: {player_lives}", True, (255, 200, 50))
+       screen.blit(lives_surf, (WIDTH - 180, 20))
 
    # Draw Press-E prompt when near fish (and not casting)
    if near_fish and not casting and press_e_frames:
