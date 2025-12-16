@@ -78,6 +78,18 @@ def safe_load(path, convert_alpha=False, size=None, fill_color=(255, 0, 255, 128
 background = safe_load(background_path, convert_alpha=False, size=(WIDTH, HEIGHT))
 bg_width, bg_height = background.get_size()
 
+# World width (galima didinti pagal poreikį)
+WORLD_WIDTH = max(bg_width, 6000)
+
+def draw_bg_tiled(scroll_x):
+    # Pakartotinai nubraižom foną horizontaliai pagal scroll_x
+    # scroll_x <= 0
+    start_x = - (abs(int(scroll_x)) % bg_width)
+    x = start_x
+    while x < WIDTH:
+        screen.blit(background, (x, 0))
+        x += bg_width
+
 # load dugnas scene (scaled to window)
 dugnas = safe_load(dugnas_path, convert_alpha=False, size=(WIDTH, HEIGHT))
 
@@ -305,6 +317,17 @@ for i in range(ZUVYS_NUM_FRAMES):
 zuvys_positions = [
    (WIDTH // 2 - 100, HEIGHT // 2 + 150),
 ]
+
+# Sugeneruoja naują žvejybos vietą į priekį, jei jos nėra netoliese
+def ensure_surface_spot_ahead(cat_world_x, min_dx=600, max_dx=1100):
+    # jei yra bent vienas taškas priekyje – nedarom nieko
+    for p in zuvys_positions:
+        if p not in disabled_spots and p[0] > cat_world_x:
+            return
+    # sukurti naują tašką į priekį (neperžengiant WORLD_WIDTH)
+    nx = int(min(cat_world_x + random.randint(min_dx, max_dx), WORLD_WIDTH - 200))
+    ny = HEIGHT // 2 + 150
+    zuvys_positions.append((nx, ny))
 
 zuvys_anim_frame = 0
 
@@ -596,7 +619,7 @@ while running:
 
 
    # Only scroll if background is wider than window
-   can_scroll = bg_width > WIDTH
+   can_scroll = WORLD_WIDTH > WIDTH
 
 
    if keys[pygame.K_a]:
@@ -609,16 +632,16 @@ while running:
    elif keys[pygame.K_d]:
        facing_left = False
        moving = True
-       if cat_x < RIGHT_MARGIN or not can_scroll or scroll_x == -(bg_width - WIDTH):
+       if cat_x < RIGHT_MARGIN or not can_scroll or scroll_x == -(WORLD_WIDTH - WIDTH):
            cat_x += speed
-       elif can_scroll and scroll_x > -(bg_width - WIDTH):
+       elif can_scroll and scroll_x > -(WORLD_WIDTH - WIDTH):
            scroll_x -= speed
 
 
    # --- Clamp values ---
    cat_x = max(0, min(cat_x, WIDTH - FRAME_WIDTH * SCALE))
    if can_scroll:
-       scroll_x = max(min(scroll_x, 0), -(bg_width - WIDTH))
+       scroll_x = max(min(scroll_x, 0), -(WORLD_WIDTH - WIDTH))
    else:
        scroll_x = 0
 
@@ -643,7 +666,8 @@ while running:
 
    # --- Interaction: detect proximity to fish ---
    # compute cat center
-   cat_center_x = cat_x + (FRAME_WIDTH * SCALE) / 2
+   cat_world_x = cat_x - scroll_x
+   cat_center_x = cat_world_x + (FRAME_WIDTH * SCALE) / 2
    cat_center_y = cat_y + (FRAME_HEIGHT * SCALE) / 2
 
    nearest_fish = None
@@ -663,6 +687,9 @@ while running:
    if e_pressed and near_fish and not casting:
        casting = True
        uzmesti_anim_frame = 0.0
+   # jei nesame po vandeniu – užtikrink naują žvejybos vietą priekyje
+   if not show_dugnas:
+       ensure_surface_spot_ahead(cat_world_x)
 
    frame = frames[int(current_frame)]
    if facing_left:
@@ -670,7 +697,7 @@ while running:
 
    # --- Draw ---
    screen.fill((0, 0, 0))
-   screen.blit(background, (0, 0))  # Always fills window
+   draw_bg_tiled(scroll_x)  # scrolinamas/tiled fonas
 
    # If dugnas (underwater) scene is active, run underwater mini-game and skip normal world rendering
    if show_dugnas:
@@ -1047,7 +1074,7 @@ while running:
    # Draw zuvys animals
    for pos in zuvys_positions:
        zuvys_frame = zuvys_frames[int(zuvys_anim_frame)]
-       screen.blit(zuvys_frame, pos)
+       screen.blit(zuvys_frame, (int(pos[0] + scroll_x), pos[1]))
 
 
    # Draw player (hidden while casting so the cast animation replaces the player)
@@ -1059,7 +1086,7 @@ while running:
    if near_fish and not casting and press_e_frames:
        press_frame = press_e_frames[int(press_e_anim_frame) % len(press_e_frames)]
        # place prompt above the nearest fish
-       prompt_x = nearest_fish[0] + (ZUVYS_FRAME_WIDTH * ZUVYS_SCALE) // 2 - press_frame.get_width() // 2
+       prompt_x = nearest_fish[0] + (ZUVYS_FRAME_WIDTH * ZUVYS_SCALE) // 2 - press_frame.get_width() // 2 + scroll_x
        prompt_y = nearest_fish[1] - press_frame.get_height() - 10
        screen.blit(press_frame, (int(prompt_x), int(prompt_y)))
        press_e_anim_frame = (press_e_anim_frame + 0.15) % len(press_e_frames)
