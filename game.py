@@ -35,8 +35,9 @@ zuvys_sheet_path = os.path.join(IMAGES_DIR, "zuvys_sheet.png")
 press_e_path = os.path.join(IMAGES_DIR, "press_e_Sheet.png")
 uzmesti_path = os.path.join(IMAGES_DIR, "uzmesti_Sheet.png")
 dugnas_path = os.path.join(IMAGES_DIR, "dugnas.png")
+meniu_path = os.path.join(IMAGES_DIR, "meniu.png")
 
-# load sheets safely (convert_alpha) after paths exist
+# load base sheets safely (so frames[] code below can use them)
 try:
     sprite_sheet = pygame.image.load(sprite_sheet_path).convert_alpha()
 except Exception:
@@ -51,13 +52,6 @@ try:
     zuvys_sheet = pygame.image.load(zuvys_sheet_path).convert_alpha()
 except Exception:
     zuvys_sheet = None
-
-# new sheets for prompt/cast
-press_e_path = os.path.join(IMAGES_DIR, "press_e_Sheet.png")
-uzmesti_path = os.path.join(IMAGES_DIR, "uzmesti_Sheet.png")
-# new: bottom/dugnas scene
-dugnas_path = os.path.join(IMAGES_DIR, "dugnas.png")
-
 
 # safe image loads: fallback to simple placeholder instead of crashing
 def safe_load(path, convert_alpha=False, size=None, fill_color=(255, 0, 255, 128)):
@@ -92,6 +86,9 @@ def draw_bg_tiled(scroll_x):
 
 # load dugnas scene (scaled to window)
 dugnas = safe_load(dugnas_path, convert_alpha=False, size=(WIDTH, HEIGHT))
+# load meniu overlay (scaled to window)
+meniu_img = safe_load(meniu_path, convert_alpha=True)  # paliekam originalų dydį (kortelė)
+show_menu = False
 
 # play looping background music from sounds/littlefishes.mp3 (safe if missing)
 SOUNDS_DIR = os.path.join(BASE_DIR, "sounds")
@@ -612,6 +609,8 @@ while running:
        elif event.type == pygame.KEYDOWN:
            if event.key == pygame.K_e:
                e_pressed = True
+           elif event.key == pygame.K_ESCAPE:
+               show_menu = not show_menu
 
    # --- Movement ---
    keys = pygame.key.get_pressed()
@@ -1048,7 +1047,6 @@ while running:
                        break
 
        # draw player lives
-       # draw player lives using hp images (1hp..5hp). index = player_lives - 1 (clamped)
        if 'hp_images' in globals() and hp_images:
            hp_idx = max(0, min(player_lives - 1, len(hp_images) - 1))
            hp_img = hp_images[hp_idx]
@@ -1058,12 +1056,34 @@ while running:
            lives_surf = small.render(f"Gyvybės: {player_lives}", True, (255, 200, 50))
            screen.blit(lives_surf, (WIDTH - 180, 20))
 
+       # --- ESC menu overlay (underwater) ---
+       if show_menu and meniu_img:
+           card_w, card_h = meniu_img.get_size()
+           card_x = (WIDTH - card_w) // 2
+           card_y = (HEIGHT - card_h) // 2
+           screen.blit(meniu_img, (card_x, card_y))
+           font_menu = pygame.font.SysFont('Arial', 32, bold=True)
+           lines = [
+               "Valdymas (po vandeniu):",
+               "W/↑ – plaukti aukštyn",
+               "A/D – kairė/dešinė",
+               "SPACE – gaudyti žuvį",
+               "F – burbulai (sulėtina ryklius)",
+               "ENTER – grįžti į paviršių",
+               "ESC – perjungti meniu"
+           ]
+           tx = card_x + 40
+           ty = card_y + 60
+           for txt in lines:
+               surf = font_menu.render(txt, True, (0, 0, 0))
+               screen.blit(surf, (tx, ty))
+               ty += 40
+
        pygame.display.flip()
        clock.tick(60)
        continue
 
-   # Draw game title
-   screen.blit(title_surface, title_rect)
+   # (pašalinta pavadinimo piešimo eilutė)
 
    # Draw varna animals
    for animal in varna_animals:
@@ -1192,6 +1212,52 @@ while running:
 
           screen.blit(uz_frame, (int(cast_x), int(cast_y)))
           uzmesti_anim_frame += 0.4
+
+   # --- ESC menu overlay (underwater) ---
+   if show_menu and meniu_img:
+       # draw menu card centered (no fullscreen darken)
+       card_w, card_h = meniu_img.get_size()
+       card_x = (WIDTH - card_w) // 2
+       card_y = (HEIGHT - card_h) // 2
+       screen.blit(meniu_img, (card_x, card_y))
+       # larger black text
+       font_menu = pygame.font.SysFont('Arial', 32, bold=True)
+       lines = [
+           "Valdymas (po vandeniu):",
+           "W/↑ – plaukti aukštyn",
+           "A/D – kairė/dešinė",
+           "SPACE – gaudyti žuvį",
+           "F – burbulai (sulėtina ryklius)",
+           "ENTER – grįžti į paviršių",
+           "ESC – perjungti meniu"
+       ]
+       tx = card_x + 40
+       ty = card_y + 60
+       for i, txt in enumerate(lines):
+           surf = font_menu.render(txt, True, (0, 0, 0))
+           screen.blit(surf, (tx, ty))
+           ty += 40
+
+   # --- ESC menu overlay (surface) ---
+   if show_menu and meniu_img:
+       card_w, card_h = meniu_img.get_size()
+       card_x = (WIDTH - card_w) // 2
+       card_y = (HEIGHT - card_h) // 2
+       screen.blit(meniu_img, (card_x, card_y))
+       font_menu = pygame.font.SysFont('Arial', 32, bold=True)
+       lines = [
+           "Valdymas (paviršius):",
+           "A/D – plaukti kairė/dešinė",
+           "E – pradėti žvejybą (prie žuvų taško)",
+           "ESC – perjungti meniu",
+           "Tikslas: rask naują žvejybos vietą ir pagauk žuvis!"
+       ]
+       tx = card_x + 40
+       ty = card_y + 60
+       for txt in lines:
+           surf = font_menu.render(txt, True, (0, 0, 0))
+           screen.blit(surf, (tx, ty))
+           ty += 40
 
    pygame.display.flip()
    clock.tick(60)
