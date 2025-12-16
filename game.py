@@ -21,6 +21,7 @@ pygame.font.init()
 title_font = pygame.font.SysFont('Arial', 72, bold=True)
 title_surface = title_font.render("Katinuko žvejyba", True, (255, 255, 255))
 title_rect = title_surface.get_rect(center=(WIDTH // 2, 60))
+small_font = pygame.font.SysFont('Arial', 24)
 
 
 # --- Load assets ---
@@ -611,6 +612,53 @@ while running:
                e_pressed = True
            elif event.key == pygame.K_ESCAPE:
                show_menu = not show_menu
+
+   # --- PAUSE: sustabdyti žaidimą, kai atidarytas meniu ---
+   if show_menu:
+       screen.fill((0, 0, 0))
+       if show_dugnas:
+           screen.blit(dugnas, (0, 0))
+           lines = [
+               "Valdymas (po vandeniu):",
+               "W/↑ – plaukti aukštyn",
+               "A/D – kairė/dešinė",
+               "SPACE – gaudyti žuvį",
+               "F – burbulai",
+               "ENTER – grįžti į paviršių",
+               "ESC – tęsti"
+           ]
+       else:
+           draw_bg_tiled(scroll_x)
+           lines = [
+               "Valdymas (paviršius):",
+               "A/D – plaukti kairė/dešinė",
+               "E – pradėti žvejybą",
+               "ESC – tęsti"
+           ]
+
+       if meniu_img:
+           card_w, card_h = meniu_img.get_size()
+           card_x = (WIDTH - card_w) // 2
+           card_y = (HEIGHT - card_h) // 2
+           screen.blit(meniu_img, (card_x, card_y))
+
+           title_font2 = pygame.font.SysFont('Arial', 48, bold=True)
+           font_menu = pygame.font.SysFont('Arial', 32, bold=True)
+
+           t_surf = title_font2.render("Katinuko žvejyba", True, (0, 0, 0))
+           t_rect = t_surf.get_rect(midtop=(card_x + card_w // 2, card_y + 18))
+           screen.blit(t_surf, t_rect)
+
+           tx = card_x + 40
+           ty = card_y + 90
+           for txt in lines:
+               surf = font_menu.render(txt, True, (0, 0, 0))
+               screen.blit(surf, (tx, ty))
+               ty += 40
+
+       pygame.display.flip()
+       clock.tick(60)
+       continue
 
    # --- Movement ---
    keys = pygame.key.get_pressed()
