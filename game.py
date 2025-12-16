@@ -174,6 +174,20 @@ coins = []  # each: {"x","y","rect","frame_idx","frame_tick"}
 coins_collected = 0
 
 
+# coin HUD icon
+pinigas_icon_path = os.path.join(IMAGES_DIR, "pinigas_ikona.png")
+try:
+    pinigas_icon = pygame.image.load(pinigas_icon_path).convert_alpha()
+    # optional scale if per didelė/maža
+    ICON_SCALE = 1.5
+    iw, ih = pinigas_icon.get_size()
+    pinigas_icon = pygame.transform.scale(pinigas_icon, (int(iw * ICON_SCALE), int(ih * ICON_SCALE)))
+except Exception:
+    # fallback: small yellow circle
+    pinigas_icon = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.draw.circle(pinigas_icon, (255, 220, 0), (16, 16), 12)
+
+
 # --- Animation setup ---
 FRAME_WIDTH = 128
 FRAME_HEIGHT = 128
@@ -524,7 +538,7 @@ player_invuln_until = 0
 dead_path = os.path.join(IMAGES_DIR, "dead.png")
 dead_img = safe_load(dead_path, convert_alpha=True)
 # optional scale (adjust DEAD_ICON_SCALE as needed)
-DEAD_ICON_SCALE = 1.5
+DEAD_ICON_SCALE = 2.2
 try:
     dead_img = pygame.transform.scale(dead_img, (int(dead_img.get_width() * DEAD_ICON_SCALE), int(dead_img.get_height() * DEAD_ICON_SCALE)))
 except Exception:
@@ -810,8 +824,11 @@ while running:
            screen.blit(score, (20, 50))
 
        # coins collected indicator
-       coins_surf = small.render(f"Monetos: {coins_collected} (kas 3 = +1 gyvybė)", True, (255, 230, 120))
-       screen.blit(coins_surf, (20, 80))
+       # draw coin icon + count
+       icon_pos = (20, 120)  # nuleista žemiau, kad nesiliptų su „pagauta žuvų“ ikona
+       screen.blit(pinigas_icon, icon_pos)
+       cnt_text = small.render(str(coins_collected), True, (255,230,120))
+       screen.blit(cnt_text, (icon_pos[0] + pinigas_icon.get_width() + 8, icon_pos[1] + (pinigas_icon.get_height() - cnt_text.get_height()) // 2))
 
        # attempt catch on SPACE: check collision between player rect and fish rect
        if keys[pygame.K_SPACE]:
@@ -903,10 +920,8 @@ while running:
                       coin_sound.play()
               except Exception:
                   pass
-              # count + life every 3
+              # count only (no auto life restore)
               coins_collected += 1
-              if coins_collected % 3 == 0:
-                  player_lives = min(player_lives + 1, 9)
               continue
           # draw coin (world->screen, consistent with bubbles/sharks if using uw_scroll_x)
           coin_img = coin_frames[c["frame_idx"]]
