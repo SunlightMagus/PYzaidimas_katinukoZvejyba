@@ -836,10 +836,11 @@ while running:
        # kabliukas nebus rodomas kaip geltonas kvadratas (pašalinta)
 
        # instructions + caught counter (Lithuanian)
-       small = pygame.font.SysFont('Arial', 24)
-       info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
-       screen.blit(info, (20, 20))
+       #small = pygame.font.SysFont('Arial', 24)
+       #info = small.render("Valdymas: W/↑ - plaukti aukštyn | A/D - kairė/dešinė | SPACE - gaudyti | ENTER - grįžti", True, (255,255,255))
+       #screen.blit(info, (20, 20))
        # show dead icon + numeric caught count
+       small = pygame.font.SysFont('Arial', 24)
        icon_x, icon_y = 20, 50
        if 'dead_img' in globals() and dead_img:
            screen.blit(dead_img, (icon_x, icon_y))
@@ -1079,6 +1080,7 @@ while running:
                screen.blit(surf, (tx, ty))
                ty += 40
 
+       # užbaigiam povandeninį frame ir pereinam į kitą ciklą
        pygame.display.flip()
        clock.tick(60)
        continue
@@ -1088,7 +1090,7 @@ while running:
    # Draw varna animals
    for animal in varna_animals:
        varna_frame = varna_frames[int(varna_anim_frame)]
-       screen.blit(varna_frame, (int(animal["x"]), int(animal["y"])))
+       screen.blit(varna_frame, (int(animal["x"] + scroll_x), int(animal["y"])))
 
 
    # Draw zuvys animals
@@ -1213,33 +1215,8 @@ while running:
           screen.blit(uz_frame, (int(cast_x), int(cast_y)))
           uzmesti_anim_frame += 0.4
 
-   # --- ESC menu overlay (underwater) ---
-   if show_menu and meniu_img:
-       # draw menu card centered (no fullscreen darken)
-       card_w, card_h = meniu_img.get_size()
-       card_x = (WIDTH - card_w) // 2
-       card_y = (HEIGHT - card_h) // 2
-       screen.blit(meniu_img, (card_x, card_y))
-       # larger black text
-       font_menu = pygame.font.SysFont('Arial', 32, bold=True)
-       lines = [
-           "Valdymas (po vandeniu):",
-           "W/↑ – plaukti aukštyn",
-           "A/D – kairė/dešinė",
-           "SPACE – gaudyti žuvį",
-           "F – burbulai (sulėtina ryklius)",
-           "ENTER – grįžti į paviršių",
-           "ESC – perjungti meniu"
-       ]
-       tx = card_x + 40
-       ty = card_y + 60
-       for i, txt in enumerate(lines):
-           surf = font_menu.render(txt, True, (0, 0, 0))
-           screen.blit(surf, (tx, ty))
-           ty += 40
-
    # --- ESC menu overlay (surface) ---
-   if show_menu and meniu_img:
+   if show_menu and meniu_img and not show_dugnas:
        card_w, card_h = meniu_img.get_size()
        card_x = (WIDTH - card_w) // 2
        card_y = (HEIGHT - card_h) // 2
