@@ -201,7 +201,7 @@ Visos konstantos yra `constants.py` faile:
 - [ ] Įvairesnės žuvys
 - [ ] Pasiekimų sistema
 - [ ] Taškų lentelė
-- [ ] Papildomi ginklai (tinklai, žiebuvėliai)
+- [ ] Papildomi ginklai (tinklai, žiburiai)
 - [ ] Boss kovos
 
 ## 📄 Licencija
