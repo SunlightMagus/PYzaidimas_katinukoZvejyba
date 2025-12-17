@@ -98,6 +98,9 @@ def main():
     # --- Meniu ---
     show_menu = False
     
+    # --- Game Over ---
+    game_over = False
+    
     # --- Pagrindinis ciklas ---
     running = True
     while running:
@@ -111,6 +114,78 @@ def main():
                     e_pressed = True
                 elif event.key == pygame.K_ESCAPE:
                     show_menu = not show_menu
+        
+        # --- GAME OVER ---
+        if game_over:
+            screen.fill((0, 0, 0))
+            
+            # Game Over užrašas
+            game_over_font = pygame.font.SysFont('Arial', 96, bold=True)
+            go_text = game_over_font.render("ŽAIDIMAS BAIGTAS", True, (255, 50, 50))
+            go_rect = go_text.get_rect(center=(WIDTH // 2, HEIGHT // 3))
+            
+            # Šešėlis
+            shadow_text = game_over_font.render("ŽAIDIMAS BAIGTAS", True, (0, 0, 0))
+            shadow_rect = shadow_text.get_rect(center=(WIDTH // 2 + 4, HEIGHT // 3 + 4))
+            screen.blit(shadow_text, shadow_rect)
+            screen.blit(go_text, go_rect)
+            
+            # Statistika
+            stats_font = pygame.font.SysFont('Arial', 36)
+            stats_text = f"Pagauta žuvų: {caught_count}  |  Surinkta monetų: {coins_collected}  |  Lygis: {current_level}"
+            stats_surf = stats_font.render(stats_text, True, (255, 255, 255))
+            stats_rect = stats_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 40))
+            screen.blit(stats_surf, stats_rect)
+            
+            # Mygtukai
+            button_font = pygame.font.SysFont('Arial', 40, bold=True)
+            
+            # "Žaisti iš naujo" mygtukas
+            restart_btn = pygame.Rect(WIDTH // 2 - 250, HEIGHT // 2 + 50, 220, 70)
+            restart_color = (50, 200, 50)
+            if restart_btn.collidepoint(pygame.mouse.get_pos()):
+                restart_color = (80, 255, 80)
+            pygame.draw.rect(screen, restart_color, restart_btn, border_radius=10)
+            pygame.draw.rect(screen, (0, 0, 0), restart_btn, 3, border_radius=10)
+            restart_text = button_font.render("Žaisti iš naujo", True, (0, 0, 0))
+            restart_text_rect = restart_text.get_rect(center=restart_btn.center)
+            screen.blit(restart_text, restart_text_rect)
+            
+            # "Išeiti" mygtukas
+            quit_btn = pygame.Rect(WIDTH // 2 + 30, HEIGHT // 2 + 50, 220, 70)
+            quit_color = (200, 50, 50)
+            if quit_btn.collidepoint(pygame.mouse.get_pos()):
+                quit_color = (255, 80, 80)
+            pygame.draw.rect(screen, quit_color, quit_btn, border_radius=10)
+            pygame.draw.rect(screen, (0, 0, 0), quit_btn, 3, border_radius=10)
+            quit_text = button_font.render("Išeiti", True, (0, 0, 0))
+            quit_text_rect = quit_text.get_rect(center=quit_btn.center)
+            screen.blit(quit_text, quit_text_rect)
+            
+            # Mygtukų logika
+            if pygame.mouse.get_pressed()[0]:
+                mx, my = pygame.mouse.get_pos()
+                if restart_btn.collidepoint(mx, my):
+                    # Reset žaidimas
+                    game_over = False
+                    player_lives = 5
+                    coins_collected = 0
+                    caught_count = 0
+                    current_level = 1
+                    spots_completed = 0
+                    show_dugnas = False
+                    current_fishing_spot = None
+                    fishing_spots.clear()
+                    fishing_spots.append(FishingSpot(WIDTH // 2 - 100, HEIGHT // 2 + 150))
+                    scroll_x = 0
+                    player.x = (WIDTH - FRAME_WIDTH * SCALE) // 2
+                    pygame.time.wait(200)  # Trumpa pauzė, kad nepaspautų du kartus
+                elif quit_btn.collidepoint(mx, my):
+                    running = False
+            
+            pygame.display.flip()
+            clock.tick(60)
+            continue
         
         # --- MENIU (PAUZĖ) ---
         if show_menu:
@@ -152,7 +227,8 @@ def main():
             )
             
             if hit and player_lives <= 0:
-                # Žaidėjas mirė - grįžti į paviršių
+                # Žaidėjas mirė - Game Over
+                game_over = True
                 show_dugnas = False
                 current_fishing_spot = None
             
